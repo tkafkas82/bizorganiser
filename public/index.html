@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BizOrganiser</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar"></aside>
+    <div id="main">
+      <header id="topbar">
+        <button id="menu-btn" class="icon-btn" onclick="document.body.classList.toggle('nav-open')" aria-label="Menu">&#9776;</button>
+        <h1 id="page-title"></h1>
+        <div class="search-wrap">
+          <input id="gsearch" placeholder="Search customers, documents, products…" autocomplete="off">
+          <div id="gsearch-results"></div>
+        </div>
+        <a id="bell" href="#/dashboard" title="Reminders due"></a>
+        <span id="sync-state" class="sync ok">● Saved</span>
+        <button id="user-menu" class="btn sm user-btn" title="Your account"></button>
+      </header>
+      <main id="view"></main>
+    </div>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <div id="print-area"></div>
+
+  <script src="js/core.js"></script>
+  <script src="js/seed.js"></script>
+  <script src="js/crm.js"></script>
+  <script src="js/sales.js"></script>
+  <script src="js/supply.js"></script>
+  <script src="js/admin.js"></script>
+  <script src="js/portal.js"></script>
+  <script>boot();</script>
+</body>
+</html>

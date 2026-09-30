@@ -1,0 +1,6 @@
+# runtime data: database, uploaded files, integration secrets, first-run credentials
+data/
+node_modules/
+*.log
+.vercel/
+.env*

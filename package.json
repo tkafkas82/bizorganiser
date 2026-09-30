@@ -1,0 +1,16 @@
+{
+  "name": "bizorganiser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloud business organiser: CRM, quotes, orders, production, deliveries, invoicing (myDATA), purchasing, B2B portal and e-shop.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@vercel/functions": "^3.9.9"
+  }
+}

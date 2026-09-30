@@ -1,0 +1,6 @@
+# never upload local data (database, uploads, secrets) or local tooling
+data/
+node_modules/
+deploy/
+start.bat
+*.log
