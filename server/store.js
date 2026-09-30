@@ -19,10 +19,16 @@ const path = require('path');
 const vm = require('vm');
 const { withRetry } = require('./db');
 
-const COLLECTIONS = ['customers', 'suppliers', 'products', 'supplierPrices', 'priceLists', 'reps', 'activities', 'quotes', 'orders',
-  'workOrders', 'deliveries', 'invoices', 'purchaseOrders', 'bills', 'emails', 'stockMoves', 'rfqs'];
+const COLLECTIONS = ['customers', 'suppliers', 'activities', 'quotes', 'projects', 'tasks', 'timeEntries', 'invoices', 'expenses', 'emails', 'team'];
 const SINGLES = ['settings', 'counters'];           // single-document "collections"
-const NUMBERED = { quotes: 'quote', orders: 'order', workOrders: 'wo', purchaseOrders: 'po', invoices: 'invoice', deliveries: 'delivery', bills: 'bill' };
+/** Numbering series for a new record (separate series per document type), or '' if the collection is not numbered. */
+function numberKey(col, rec) {
+  if (col === 'quotes') return 'quote';
+  if (col === 'projects') return 'project';
+  if (col === 'expenses') return 'expense';
+  if (col === 'invoices') return ['5.1', '11.4'].includes(rec.type) ? 'credit' : ['11.2', '11.1'].includes(rec.type) ? 'receipt' : 'invoice';
+  return '';
+}
 
 function makeSandbox(publicDir) {
   const noop = () => {};
@@ -39,7 +45,7 @@ function makeSandbox(publicDir) {
   vm.runInContext('globalThis.__setDB = d => { db = d; };', ctx);
   // `const` helpers are not properties of the sandbox global: expose the ones the server uses
   vm.runInContext(`Object.assign(globalThis, { uid, clone, esc, sum, round2, money, num, today, addDays, fmtDate, byId, nameOf,
-    lineNet, paidOf, isCredit, creditsOf, creditedOf, balanceOf, invNet, fillTpl });`, ctx);
+    lineNet, paidOf, isCredit, payableOf, creditsOf, creditedOf, balanceOf, invNet, fillTpl, projectFee, installmentAmount, installmentDue });`, ctx);
   return ctx;
 }
 
@@ -205,9 +211,12 @@ class Store {
     this.recountCounters();
   }
   recountCounters() {
-    for (const [col, key] of Object.entries(NUMBERED)) {
-      const max = Math.max(0, ...this.db[col].map(r => { const m = String(r.number || '').match(/(\d+)\s*$/); return m ? +m[1] : 0; }));
-      this.db.counters[key] = Math.max(this.db.counters[key] || 0, max);
+    for (const col of COLLECTIONS) {
+      for (const r of this.db[col]) {
+        const key = numberKey(col, r); if (!key) continue;
+        const m = String(r.number || '').match(/(\d+)\s*$/);
+        if (m) this.db.counters[key] = Math.max(this.db.counters[key] || 0, +m[1]);
+      }
     }
   }
   isEmpty() { return this.snap.size === 0; }
@@ -230,4 +239,4 @@ class Store {
   version(col, id) { return this.ver.get(`${col}/${id}`) || 0; }
 }
 
-module.exports = { Store, COLLECTIONS, SINGLES, NUMBERED };
+module.exports = { Store, COLLECTIONS, SINGLES, numberKey };

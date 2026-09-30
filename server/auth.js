@@ -8,7 +8,7 @@ const crypto = require('crypto');
 
 const SESSION_HOURS = 12;
 const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
-const STAFF_ROLES = ['admin', 'sales', 'production', 'accounting'];
+const STAFF_ROLES = ['admin', 'architect', 'accounting', 'sales', 'production'];   // sales/production: roles from earlier versions
 const ALL_ROLES = [...STAFF_ROLES, 'customer'];
 
 function hashPassword(pw) {

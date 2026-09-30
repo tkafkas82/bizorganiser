@@ -90,7 +90,7 @@ Show the temporary password (it is printed only on the server, never sent anywhe
 ssh ubuntu@<PUBLIC-IP> "sudo cat /var/lib/bizorganiser/FIRST-RUN-CREDENTIALS.txt"
 ```
 
-Open the address, sign in as `admin@demoprint.example` and choose a new password. Then:
+Open the address, sign in as `admin@demoarchitects.example` (or your `ADMIN_EMAIL`) and choose a new password. Then:
 
 - **Settings → Users & logins**: create real accounts and disable or delete the demo ones.
 - **Settings → Data & audit → Start empty** to remove the demo company, then fill in **Settings → Company**.

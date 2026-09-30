@@ -164,7 +164,7 @@ if ! curl -fsS -o /dev/null http://127.0.0.1:$PORT/; then
 fi
 
 say "Done"
-echo "  Address:   https://$DOMAIN/          (customer portal: /b2b/   e-shop: /shop/)"
+echo "  Address:   https://$DOMAIN/          (client portal: /client/)"
 echo "  The HTTPS certificate is requested automatically on the first visit (can take ~1 minute)."
 if [ -f "$DATA/FIRST-RUN-CREDENTIALS.txt" ]; then
   echo

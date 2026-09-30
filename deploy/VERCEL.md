@@ -45,7 +45,7 @@ The first run:
 On the first request the app creates the database tables and a demo company. Then:
 
 - sign in with the email you entered and the temporary password, and choose a new password;
-- **Settings → Users & logins**: create real accounts, and remove the demo accounts (`sales@…`, `production@…`, `accounts@…`, `portal@…`);
+- **Settings → Users & logins**: create real accounts, and remove the demo accounts (`eleni@…`, `nikos@…`, `accounts@…`, `client@…`);
 - **Settings → Data & audit → Start empty**, then fill in **Settings → Company**.
 
 To start without the demo company, add the environment variable `BIZ_DEMO` = `0` before the first deployment.
@@ -63,8 +63,7 @@ The printed `…vercel.app` address works immediately. For your own domain (for 
 **Vercel → Project → Settings → Domains → Add**, and create the DNS record Vercel shows you.
 
 - Staff app: `https://<address>/`
-- Customer portal: `https://<address>/b2b/`
-- E-shop: `https://<address>/shop/`
+- Client portal: `https://<address>/client/`
 
 ## Environment variables
 
@@ -72,7 +71,7 @@ The printed `…vercel.app` address works immediately. For your own domain (for 
 |---|---|
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | Database connection |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | First administrator. Only used while there are no users; the password must be changed at first sign-in. |
-| `BIZ_SECRET_KEY` | Encrypts the integration passwords (SMTP, myDATA, couriers) stored in the database. **Never change or lose it**: without it the stored integration settings can't be read and must be entered again. |
+| `BIZ_SECRET_KEY` | Encrypts the integration passwords (SMTP, myDATA) stored in the database. **Never change or lose it**: without it the stored integration settings can't be read and must be entered again. |
 | `CRON_SECRET` | Protects the daily maintenance job (`/api/cron`) |
 | `BIZ_DEMO` | Optional: `0` = don't create the demo company |
 

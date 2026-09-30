@@ -80,7 +80,7 @@ $url = ([regex]::Matches($out, 'https://[A-Za-z0-9.-]+\.vercel\.app') | Select-O
 
 Write-Host ''
 Write-Host 'Deployment finished.' -ForegroundColor Green
-if ($url) { Write-Host "  Address:      $url   (customer portal: /b2b/   e-shop: /shop/)" }
+if ($url) { Write-Host "  Address:      $url   (client portal: /client/)" }
 if ($adminPassword) {
   Write-Host "  First sign-in: the email you entered, temporary password: $adminPassword" -ForegroundColor Yellow
   Write-Host '  You must choose a new password at first sign-in. The temporary one is not shown again.'

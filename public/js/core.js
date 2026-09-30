@@ -9,8 +9,7 @@
    and sent to /api/sync with that version (optimistic concurrency). Changes
    made by other users arrive through /api/changes polling.                  */
 let db = null;
-const SYNC_COLS = ['customers', 'suppliers', 'products', 'supplierPrices', 'priceLists', 'reps', 'activities', 'quotes', 'orders',
-  'workOrders', 'deliveries', 'invoices', 'purchaseOrders', 'bills', 'emails', 'stockMoves', 'rfqs'];
+const SYNC_COLS = ['customers', 'suppliers', 'activities', 'quotes', 'projects', 'tasks', 'timeEntries', 'invoices', 'expenses', 'emails', 'team'];
 const SYNC = { snap: new Map(), vers: new Map(), seq: 0, polls: 0, timer: null, inflight: null, me: null, integrations: {}, state: 'ok' };
 const keyOf = (col, id) => col + '/' + id;
 
@@ -62,7 +61,7 @@ function applyServerRecord(col, id, data, version) {
   if (version) SYNC.vers.set(k, version);
   if (data == null) { localRemove(col, id); SYNC.snap.delete(k); }
   else { localSet(col, data); SYNC.snap.set(k, JSON.stringify(data)); }
-  if (ED && ED.doc.id === id && !ED.dirty) ED.doc = clone(data || ED.doc);
+  if (typeof PED !== 'undefined' && PED && PED.doc.id === id && !PED.dirty && data) PED.doc = clone(data);
 }
 function setSyncState(state, msg = '') {
   SYNC.state = state;
@@ -100,6 +99,7 @@ async function syncNow() {
       setSyncState('ok'); ok = true;
       if (redraw) rerenderSafe();
     } catch (e) {
+      if (!('status' in e)) console.error('syncNow failed', e);
       setSyncState('error', e.message);
       if (e.status !== 401) SYNC.timer = setTimeout(syncNow, 5000);
     }
@@ -126,7 +126,7 @@ async function pollChanges() {
     SYNC.seq = r.seq;
     if (SYNC.state === 'error') syncNow();
     if (changed) rerenderSafe();
-  } catch { /* offline: try again next tick */ }
+  } catch (e) { if (!('status' in e)) console.error('pollChanges failed', e); /* network errors: try again next tick */ }
 }
 /** Re-render unless the user is in the middle of typing or has a dialog open. */
 function rerenderSafe() {
@@ -191,41 +191,26 @@ function nextNo(key) {
 }
 
 /* ---------- business helpers ---------- */
-function priceFor(customer, product) {
-  if (!product) return 0;
-  const pl = customer && byId('priceLists', customer.priceListId);
-  if (pl) {
-    const ov = (pl.overrides || []).find(o => o.productId === product.id);
-    if (ov) return round2(ov.price);
-    return round2(product.price * (1 - (+pl.discount || 0) / 100));
-  }
-  return round2(product.price);
-}
 const lineNet = l => round2((+l.qty || 0) * (+l.price || 0) * (1 - (+l.discount || 0) / 100));
-function totals(lines) {
+/** Document totals. withholdingRate: % of the net fee withheld by the client (paid by them to the tax office). */
+function totals(lines, withholdingRate = 0) {
   const net = round2(sum(lines, lineNet));
-  const cost = round2(sum(lines, l => (+l.qty || 0) * (+l.unitCost || 0)));
   const vat = round2(net * db.settings.vatRate / 100);
-  return { net, vat, total: round2(net + vat), cost, margin: round2(net - cost), marginPct: net ? (net - cost) / net * 100 : 0 };
-}
-function applyStock(lines, sign, ref) {
-  for (const l of lines) {
-    const p = byId('products', l.productId);
-    if (!p || p.kind === 'service' || !(+l.qty)) continue;
-    p.stock = round2(p.stock + sign * (+l.qty));
-    db.stockMoves.unshift({ id: uid(), productId: p.id, qty: sign * (+l.qty), reason: ref || '', date: new Date().toISOString() });
-  }
+  const total = round2(net + vat);
+  const withheld = round2(net * (+withholdingRate || 0) / 100);
+  return { net, vat, total, withheld, payable: round2(total - withheld) };
 }
 const paidOf = inv => round2(sum(inv.payments || [], p => p.amount));
-const isCredit = inv => inv.type === '5.1';
+const isCredit = inv => inv.type === '5.1' || inv.type === '11.4';
+const payableOf = inv => round2(inv.payable ?? (inv.total - (inv.withheld || 0)));
 /** Credit notes issued against an invoice (not cancelled). */
 const creditsOf = inv => (db.invoices || []).filter(c => c.creditOf === inv.id && !c.cancelled);
-const creditedOf = inv => round2(sum(creditsOf(inv), c => c.total));
-const balanceOf = inv => isCredit(inv) || inv.cancelled ? 0 : round2(inv.total - paidOf(inv) - creditedOf(inv));
+const creditedOf = inv => round2(sum(creditsOf(inv), payableOf));
+const balanceOf = inv => isCredit(inv) || inv.cancelled ? 0 : round2(payableOf(inv) - paidOf(inv) - creditedOf(inv));
 /** Signed amounts: credit notes reduce revenue. */
-const invNet = inv => (isCredit(inv) ? -1 : 1) * (+inv.net || 0);
-const invCost = inv => (isCredit(inv) ? -1 : 1) * (+inv.cost || 0);
-const invVat = inv => (isCredit(inv) ? -1 : 1) * (+inv.vat || 0);
+const invSign = inv => (isCredit(inv) ? -1 : 1);
+const invNet = inv => invSign(inv) * (+inv.net || 0);
+const invVat = inv => invSign(inv) * (+inv.vat || 0);
 function invStatus(inv) {
   if (inv.cancelled) return 'cancelled';
   if (isCredit(inv)) return 'credit';
@@ -234,6 +219,31 @@ function invStatus(inv) {
   if (inv.dueDate && inv.dueDate < today()) return 'overdue';
   return paidOf(inv) > 0 ? 'partial' : 'unpaid';
 }
+/** Suggested withholding for a client and net amount (business clients, above the threshold). */
+const withholdingFor = (customer, net) => customer && customer.type !== 'Individual' && net > (+db.settings.withholdingThreshold || 0) ? (+db.settings.withholdingRate || 0) : 0;
+const invoiceTypeFor = customer => customer && customer.type !== 'Individual' ? '2.1' : '11.2';
+
+/* ---------- projects ---------- */
+const projectFee = p => round2(sum(p.phases || [], ph => ph.fee));
+const projectInvoices = pid => db.invoices.filter(i => i.projectId === pid && !i.cancelled);
+const projectInvoiced = p => round2(sum(projectInvoices(p.id), invNet));
+const installmentAmount = (p, ins) => round2(projectFee(p) * (+ins.percent || 0) / 100);
+const scheduleTotal = list => round2(sum(list || [], i => +i.percent || 0));
+/** An installment is due when its date has come or its trigger phase is done. */
+function installmentDue(p, ins) {
+  if (ins.invoiceId) return false;
+  if (ins.phaseId) return (p.phases || []).find(x => x.id === ins.phaseId)?.status === 'done';
+  return !ins.dueDate || ins.dueDate <= today();
+}
+const hourlyCost = uid_ => +(db.team.find(x => x.id === uid_)?.hourlyCost) || +db.settings.defaultHourlyCost || 0;
+const projectHours = (pid, phaseId) => round2(sum(db.timeEntries.filter(t => t.projectId === pid && (!phaseId || t.phaseId === phaseId)), t => t.hours));
+const projectLabour = pid => round2(sum(db.timeEntries.filter(t => t.projectId === pid), t => t.hours * hourlyCost(t.userId)));
+const projectExpenses = pid => round2(sum(db.expenses.filter(e => e.projectId === pid), e => e.net));
+const phaseOf = (p, id) => (p?.phases || []).find(x => x.id === id);
+const currentPhase = p => (p.phases || []).find(x => x.status === 'progress') || (p.phases || []).find(x => x.status === 'todo') || (p.phases || []).slice(-1)[0];
+const projectProgress = p => { const n = (p.phases || []).length; return n ? p.phases.filter(x => x.status === 'done').length / n : 0; };
+const progressBar = f => `<div class="progress" title="${Math.round(f * 100)}%"><span style="width:${Math.round(f * 100)}%"></span></div>`;
+const projectLabel = p => p ? `${p.number} · ${p.name}` : '—';
 
 /* ---------- email (simulated outbox) ---------- */
 const fillTpl = (s, vars) => String(s).replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] ?? m);
@@ -254,22 +264,25 @@ function sendTemplate(key, to, vars, ref, customerId) {
 }
 
 /* ---------- users & roles ---------- */
+const ARCH_PAGES = ['dashboard', 'calendar', 'customers', 'quotes', 'projects', 'tasks', 'timesheets', 'suppliers', 'outbox'];
 const ROLES = {
   admin: { label: 'Administrator', pages: '*' },
-  sales: { label: 'Sales', pages: ['dashboard', 'calendar', 'customers', 'quotes', 'orders', 'reps', 'deliveries', 'products', 'reports', 'pricelists', 'portal', 'outbox'] },
-  production: { label: 'Production', pages: ['dashboard', 'calendar', 'orders', 'production', 'deliveries', 'products', 'suppliers', 'purchasing'] },
-  accounting: { label: 'Accounting', pages: ['dashboard', 'calendar', 'customers', 'orders', 'invoices', 'suppliers', 'purchasing', 'reps', 'reports', 'outbox'] },
+  architect: { label: 'Architect', pages: ARCH_PAGES },
+  accounting: { label: 'Accounting', pages: ['dashboard', 'calendar', 'customers', 'quotes', 'projects', 'timesheets', 'invoices', 'expenses', 'suppliers', 'reports', 'outbox'] },
+  // roles from earlier versions keep working
+  sales: { label: 'Architect', pages: ARCH_PAGES },
+  production: { label: 'Architect', pages: ARCH_PAGES },
 };
 const me = () => byId('users', db.session.userId) || db.users[0];
 function can(page) { const r = ROLES[me().role] || ROLES.sales; return r.pages === '*' || r.pages.includes(page); }
 
 /* ---------- status labels ---------- */
 const STATUS = {
-  draft: 'Draft', sent: 'Sent', accepted: 'Accepted', rejected: 'Rejected', converted: 'Converted',
-  pending: 'Awaiting confirmation', new: 'New', production: 'In production', ready: 'Ready', shipped: 'Shipped',
-  delivered: 'Delivered', cancelled: 'Cancelled', received: 'Received', todo: 'To do', progress: 'In progress', done: 'Done',
-  paid: 'Paid', unpaid: 'Unpaid', partial: 'Partially paid', overdue: 'Overdue', transmitted: 'Transmitted',
-  picked_up: 'Picked up', in_transit: 'In transit', awaiting: 'Awaiting reply', answered: 'Answered',
+  draft: 'Draft', sent: 'Sent', accepted: 'Accepted', rejected: 'Rejected', converted: 'Became a project',
+  active: 'Active', on_hold: 'On hold', completed: 'Completed', cancelled: 'Cancelled',
+  todo: 'To do', progress: 'In progress', done: 'Done',
+  paid: 'Paid', unpaid: 'Unpaid', partial: 'Partially paid', overdue: 'Overdue', transmitted: 'Transmitted', pending: 'Pending',
+  due: 'Due', planned: 'Planned', invoiced: 'Invoiced',
   credit: 'Credit note', queued: 'Sending…', simulated: 'Not sent (simulation)', failed: 'Failed',
 };
 const badge = s => `<span class="badge b-${esc(s)}">${esc(STATUS[s] || s)}</span>`;
@@ -436,11 +449,10 @@ const UI = {}; // transient per-page UI state
 
 const NAV = [
   ['Overview', [['dashboard', 'Dashboard'], ['calendar', 'Calendar']]],
-  ['CRM & Sales', [['customers', 'Customers'], ['quotes', 'Quotes'], ['orders', 'Orders'], ['reps', 'Sales reps']]],
-  ['Operations', [['production', 'Production'], ['deliveries', 'Deliveries'], ['products', 'Products & stock']]],
-  ['Purchasing', [['suppliers', 'Suppliers'], ['purchasing', 'Purchasing']]],
-  ['Finance', [['invoices', 'Invoices'], ['reports', 'Reports']]],
-  ['B2B Link', [['pricelists', 'Price lists'], ['portal', 'B2B portal ↗']]],
+  ['Clients', [['customers', 'Clients'], ['quotes', 'Fee proposals']]],
+  ['Projects', [['projects', 'Projects'], ['tasks', 'Tasks'], ['timesheets', 'Timesheets']]],
+  ['Finance', [['invoices', 'Invoices'], ['expenses', 'Expenses'], ['reports', 'Reports']]],
+  ['Network', [['suppliers', 'Collaborators']]],
   ['System', [['outbox', 'Email outbox'], ['settings', 'Settings']]],
 ];
 
@@ -467,8 +479,7 @@ function render() {
   const { name, params } = parseHash();
   const pg = PAGES[name] || PAGES.dashboard;
   const permKey = pg.perm ? pg.perm(...params) : (typeof pg.nav === 'string' ? pg.nav : name);
-  document.body.classList.toggle('portal-mode', name === 'portal');
-  document.body.classList.remove('nav-open');
+    document.body.classList.remove('nav-open');
   renderShell(PAGES[name] ? name : 'dashboard', params);
   const view = document.getElementById('view');
   if (!can(permKey)) {
@@ -495,12 +506,11 @@ function globalSearch(q) {
   if (q.length < 2) { box.innerHTML = ''; box.hidden = true; return; }
   const hits = [];
   const add = (type, label, sub, href, perm) => { if (can(perm)) hits.push({ type, label, sub, href }); };
-  db.customers.filter(c => (c.name + ' ' + c.vat + ' ' + c.email).toLowerCase().includes(q)).slice(0, 5).forEach(c => add('Customer', c.name, c.city, `customer/${c.id}`, 'customers'));
-  db.quotes.filter(x => x.number.toLowerCase().includes(q)).slice(0, 3).forEach(x => add('Quote', x.number, nameOf('customers', x.customerId), `edit/quote/${x.id}`, 'quotes'));
-  db.orders.filter(x => x.number.toLowerCase().includes(q)).slice(0, 3).forEach(x => add('Order', x.number, nameOf('customers', x.customerId), `edit/order/${x.id}`, 'orders'));
+  db.customers.filter(c => (c.name + ' ' + (c.vat || '') + ' ' + (c.email || '')).toLowerCase().includes(q)).slice(0, 5).forEach(c => add('Client', c.name, c.city, `customer/${c.id}`, 'customers'));
+  db.projects.filter(p => (p.number + ' ' + p.name + ' ' + (p.siteAddress || '') + ' ' + (p.kaek || '') + ' ' + (p.permitNo || '')).toLowerCase().includes(q)).slice(0, 5).forEach(p => add('Project', p.name, p.number, `project/${p.id}`, 'projects'));
+  db.quotes.filter(x => (x.number + ' ' + (x.projectName || '')).toLowerCase().includes(q)).slice(0, 3).forEach(x => add('Proposal', x.number, x.projectName, `quote/${x.id}`, 'quotes'));
   db.invoices.filter(x => x.number.toLowerCase().includes(q)).slice(0, 3).forEach(x => add('Invoice', x.number, nameOf('customers', x.customerId), `invoice/${x.id}`, 'invoices'));
-  db.products.filter(p => (p.name + ' ' + p.sku).toLowerCase().includes(q)).slice(0, 4).forEach(p => add('Product', p.name, p.sku, 'products', 'products'));
-  db.suppliers.filter(s => s.name.toLowerCase().includes(q)).slice(0, 3).forEach(s => add('Supplier', s.name, s.city || '', `supplier/${s.id}`, 'suppliers'));
+  db.suppliers.filter(s => (s.name + ' ' + (s.specialty || '')).toLowerCase().includes(q)).slice(0, 3).forEach(s => add('Collaborator', s.name, s.specialty || '', `supplier/${s.id}`, 'suppliers'));
   box.hidden = false;
   box.innerHTML = hits.length ? hits.map(h => `<a href="#/${h.href}"><span class="tag">${h.type}</span> ${esc(h.label)} <small>${esc(h.sub || '')}</small></a>`).join('') : `<div class="empty sm">No results</div>`;
 }
@@ -572,7 +582,7 @@ async function boot() {
   try { user = (await api('/api/me')).user; }
   catch (e) { if (e.status === 401) return showLogin(); return fatal(e); }
   if (user.mustChange) return showPasswordChange(user);
-  if (user.role === 'customer') { location.href = '/b2b/'; return; }
+  if (user.role === 'customer') { location.href = '/client/'; return; }
   try { await loadData(); } catch (e) { return fatal(e); }
   window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
   document.addEventListener('click', e => {

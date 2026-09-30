@@ -2,7 +2,7 @@
   "name": "bizorganiser",
   "version": "1.0.0",
   "private": true,
-  "description": "Cloud business organiser: CRM, quotes, orders, production, deliveries, invoicing (myDATA), purchasing, B2B portal and e-shop.",
+  "description": "Practice management for architectural offices: clients, fee proposals, projects with phases and payment schedules, timesheets, collaborators, invoicing with myDATA and a client portal.",
   "engines": {
     "node": ">=22.13"
   },

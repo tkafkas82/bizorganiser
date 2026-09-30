@@ -42,6 +42,6 @@ server.on('error', e => {
 ensureReady().then(() => {
   server.listen(RUNTIME.port, RUNTIME.host, () => {
     console.log(`BizOrganiser running at http://${RUNTIME.host === '0.0.0.0' ? 'localhost' : RUNTIME.host}:${RUNTIME.port}/`);
-    console.log(`  B2B portal: /b2b/   ·   E-shop: /shop/   ·   database: ${where}   ·   data folder: ${DATA}`);
+    console.log(`  Client portal: /client/   ·   database: ${where}   ·   data folder: ${DATA}`);
   });
 }).catch(e => { console.error('Could not start BizOrganiser:', e); process.exit(1); });

@@ -309,3 +309,12 @@ body.portal-mode #view { padding: 0; }
 .b-queued { background: #eef0f4; color: #4a5566; } .b-simulated { background: #fff4de; color: #95600a; } .b-failed { background: #fde8e7; color: #b42318; }
 .b-credit { background: #f0e9ff; color: #6232c4; }
 @media (max-width: 960px) { .user-btn small, .sync { display: none; } }
+
+/* ---------- projects ---------- */
+.proj-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin: 4px 0 12px; }
+.proj-head h2 { font-size: 20px; margin-bottom: 2px; }
+.nowrap { white-space: nowrap; }
+.b-active, .b-due { background: #e6efff; color: #1f4fbf; }
+.b-on_hold, .b-planned { background: #eef0f4; color: #4a5566; }
+.b-completed, .b-invoiced { background: #e3f6ea; color: #16733c; }
+.ev-site { background: #dff6f6; color: #0f766e; }
